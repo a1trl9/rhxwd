@@ -1,0 +1,19 @@
+{
+  "name": "tscp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^3.7.2"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.7.0",
+    "@babel/core": "^7.7.2",
+    "@babel/preset-env": "^7.7.1",
+    "babel-core": "^6.26.3"
+  }
+}
