@@ -10,6 +10,8 @@ class TestClass<T extends BaseClass2 = BaseClass3> extends BaseClass {
   private index = global_var_3;
   private local_var_1 = [{ a: 3 }];
   checkbox(local_var_2 = global_var_2) {
+    const T = 3;
+    const local_var_3 = global_var_3 as T;
     return global_var_1 + 3 + this.local_var_1[this.index].a + local_var_2;
   }
 }

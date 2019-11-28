@@ -1,0 +1,13 @@
+package.json
+package-lock.json
+dist
+.angulardoc.json
+.vscode/*
+**/*.png
+**/*.svg
+**/*.ico
+**/*.jpg
+**/*.gitkeep
+**/browserslist
+src/libs/**
+src/assets/scripts/**
