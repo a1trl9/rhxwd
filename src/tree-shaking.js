@@ -4,8 +4,11 @@ const ts = require("typescript");
 const BLOCK_FLAG = Symbol("block");
 const FUNC_DECL_FLAG = Symbol("func_decl");
 
+const EMPTY_TYPE = 0;
 const VARIABLE_TYPE = 1 << 0;
 const LABEL_TYPE = 1 << 1;
+const THIS_TYPE = 1 << 2;
+const PROPERTY_TYPE = 1 << 3;
 
 function buildFilePath(file) {
   return path.resolve(__dirname, file);
@@ -24,6 +27,7 @@ const srcFiles = [
   buildFilePath("../test_file/test_try_catch_statement.ts"),
   buildFilePath("../test_file/test_throw_statement.ts"),
   // declaration
+  buildFilePath("../test_file/test_function_decl.ts"),
   buildFilePath("../test_file/test_class_decl.ts")
 ];
 const outDir = path.resolve(__dirname, "../dist");
@@ -49,7 +53,7 @@ function parseExpression(expr) {
   }
   if (ts.isArrayLiteralExpression(expr)) {
     return expr.elements.reduce((prev, el) => {
-      return [...prev, ...parseIdentifierOrExpression(el)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(el)];
     }, []);
   }
   if (ts.isObjectLiteralExpression(expr)) {
@@ -57,68 +61,75 @@ function parseExpression(expr) {
       return [
         ...prev,
         ...(ts.isComputedPropertyName(prop.name)
-          ? parseIdentifierOrExpression(prop.name.expression)
+          ? parseIdentifierOrLiteralOrExpression(prop.name.expression)
           : []),
-        ...parseIdentifierOrExpression(prop.initializer)
+        ...parseIdentifierOrLiteralOrExpression(prop.initializer)
       ];
     }, []);
   }
   if (ts.isPropertyAccessExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    const type =
+      expr.expression.kind === ts.SyntaxKind.ThisKeyword
+        ? THIS_TYPE
+        : PROPERTY_TYPE;
+    return [
+      ...parseIdentifierOrLiteralOrExpression(expr.expression),
+      { key: [expr.name.escapedText], type }
+    ];
   }
   if (ts.isElementAccessExpression(expr)) {
     return [
-      ...parseIdentifierOrExpression(expr.expression),
-      ...parseIdentifierOrExpression(expr.argumentExpression)
+      ...parseIdentifierOrLiteralOrExpression(expr.expression),
+      ...parseIdentifierOrLiteralOrExpression(expr.argumentExpression)
     ];
   }
   if (ts.isCallExpression(expr)) {
-    let result = parseIdentifierOrExpression(expr.expression);
+    let result = parseIdentifierOrLiteralOrExpression(expr.expression);
     result = expr.arguments.reduce((prev, arg) => {
-      return [...prev, ...parseIdentifierOrExpression(arg)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(arg)];
     }, result);
     if (!expr.typeArguments) {
       return result;
     }
     return expr.typeArguments.reduce((prev, arg) => {
-      return [...prev, ...parseIdentifierOrExpression(arg.typeName)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(arg.typeName)];
     }, result);
   }
   if (ts.isNewExpression(expr)) {
     const result = [
-      ...parseIdentifierOrExpression(expr.expression),
+      ...parseIdentifierOrLiteralOrExpression(expr.expression),
       ...expr.arguments.reduce((prev, arg) => {
-        return [...prev, ...parseIdentifierOrExpression(arg)];
+        return [...prev, ...parseIdentifierOrLiteralOrExpression(arg)];
       }, [])
     ];
     if (!expr.typeArguments) {
       return result;
     }
     return expr.typeArguments.reduce((prev, arg) => {
-      return [...prev, ...parseIdentifierOrExpression(arg.typeName)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(arg.typeName)];
     }, result);
   }
   if (ts.isTaggedTemplateExpression(expr)) {
     const result = [
-      ...parseIdentifierOrExpression(expr.tag),
-      ...parseIdentifierOrExpression(expr.template)
+      ...parseIdentifierOrLiteralOrExpression(expr.tag),
+      ...parseIdentifierOrLiteralOrExpression(expr.template)
     ];
     if (!expr.typeArguments) {
       return result;
     }
     return expr.typeArguments.reduce((prev, arg) => {
-      return [...prev, ...parseIdentifierOrExpression(arg.typeName)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(arg.typeName)];
     }, result);
   }
   // TODO: TypeAssertionExpression
   if (ts.isTypeAssertion(expr)) {
     return [
-      ...parseIdentifierOrExpression(expr.type.typeName),
-      ...parseIdentifierOrExpression(expr.expression)
+      ...parseIdentifierOrLiteralOrExpression(expr.type.typeName),
+      ...parseIdentifierOrLiteralOrExpression(expr.expression)
     ];
   }
   if (ts.isParenthesizedExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isFunctionExpression(expr)) {
     // TODO: recursively call function
@@ -129,46 +140,49 @@ function parseExpression(expr) {
     return [];
   }
   if (ts.isDeleteExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isTypeOfExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isVoidExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isAwaitExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isPrefixUnaryExpression(expr)) {
-    return parseIdentifierOrExpression(expr.operand);
+    return parseIdentifierOrLiteralOrExpression(expr.operand);
   }
   if (ts.isPostfixUnaryExpression(expr)) {
-    return parseIdentifierOrExpression(expr.operand);
+    return parseIdentifierOrLiteralOrExpression(expr.operand);
   }
   if (ts.isBinaryExpression(expr)) {
     return [
-      ...parseIdentifierOrExpression(expr.left),
-      ...parseIdentifierOrExpression(expr.right)
+      ...parseIdentifierOrLiteralOrExpression(expr.left),
+      ...parseIdentifierOrLiteralOrExpression(expr.right)
     ];
   }
   if (ts.isConditionalExpression(expr)) {
     return [
-      ...parseIdentifierOrExpression(expr.condition),
-      ...parseIdentifierOrExpression(expr.whenTrue),
-      ...parseIdentifierOrExpression(expr.whenFalse)
+      ...parseIdentifierOrLiteralOrExpression(expr.condition),
+      ...parseIdentifierOrLiteralOrExpression(expr.whenTrue),
+      ...parseIdentifierOrLiteralOrExpression(expr.whenFalse)
     ];
   }
   if (ts.isTemplateExpression(expr)) {
     return expr.templateSpans.reduce((prev, span) => {
-      return [...prev, ...parseIdentifierOrExpression(span.expression)];
+      return [
+        ...prev,
+        ...parseIdentifierOrLiteralOrExpression(span.expression)
+      ];
     }, []);
   }
   if (ts.isYieldExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isSpreadElement(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isClassExpression(expr)) {
     // TODO: parse class
@@ -178,41 +192,50 @@ function parseExpression(expr) {
     return [];
   }
   if (ts.isExpressionWithTypeArguments(expr)) {
-    const result = parseIdentifierOrExpression(expr.expression);
+    const result = parseIdentifierOrLiteralOrExpression(expr.expression);
     if (!expr.typeArguments) {
       return result;
     }
     return expr.typeArguments.reduce((prev, arg) => {
-      return [...prev, ...parseIdentifierOrExpression(arg.typeName)];
+      return [...prev, ...parseIdentifierOrLiteralOrExpression(arg.typeName)];
     }, result);
   }
   if (ts.isAsExpression(expr)) {
     return [
-      ...parseIdentifierOrExpression(expr.expression),
-      ...parseIdentifierOrExpression(expr.type.typeName)
+      ...parseIdentifierOrLiteralOrExpression(expr.expression),
+      ...parseIdentifierOrLiteralOrExpression(expr.type.typeName)
     ];
   }
   if (ts.isNonNullExpression(expr)) {
-    return parseIdentifierOrExpression(expr.expression);
+    return parseIdentifierOrLiteralOrExpression(expr.expression);
   }
   if (ts.isMetaProperty(expr)) {
     return [];
   }
 }
 
-function parseIdentifierOrExpression(node) {
+function parseIdentifierOrLiteralOrExpression(node) {
+  if (
+    ts.SyntaxKind.FirstLiteralToken <= node.kind &&
+    node.kind <= ts.SyntaxKind.LastLiteralToken
+  ) {
+    return [];
+  }
+  if (node.kind === ts.SyntaxKind.ThisKeyword) {
+    return [];
+  }
   if (ts.isIdentifier(node)) {
-    return [node.escapedText];
+    return [{ key: [node.escapedText], type: VARIABLE_TYPE }];
   }
   return parseExpression(node);
 }
 
-function collectRequiredForIdentifierOrExpr(expr, type = VARIABLE_TYPE) {
+function collectRequiredForIdentifierOrExpr(expr, type = EMPTY_TYPE) {
   if (!expr) return {};
   const transformed = {};
-  const required = parseIdentifierOrExpression(expr);
+  const required = parseIdentifierOrLiteralOrExpression(expr);
   required.forEach(varr => {
-    transformed[varr] = (transformed[varr] || 0) | type;
+    transformed[varr.key] = (transformed[varr.key] || varr.type || 0) | type;
   });
   return transformed;
 }
@@ -357,7 +380,7 @@ function collectRequiredForStmt(stmt, scopeStacks) {
       "Warning: we do not support tree-shake for WithStatement. Also it is not a recommended pattern."
     );
     return {
-      ...parseIdentifierOrExpression(stmt.expression),
+      ...parseIdentifierOrLiteralOrExpression(stmt.expression),
       ...collectRequiredForStmt(stmt.statement.scopeStacks)
     };
   }
@@ -473,16 +496,24 @@ function collectRequiredForVariableDeclList(decls, scopeStacks) {
 function collectRequiredForFunctionDecl(decl, scopeStacks) {
   // function has its own scope
   const functionScope = {};
-  scopeStacks.push(functionScope);
+  let required = {};
   decl.parameters.forEach(param => {
+    required = {
+      ...required,
+      ...collectRequiredForIdentifierOrExpr(param.initializer)
+    };
     functionScope[param.name.escapedText] = VARIABLE_TYPE;
   });
-  const required = decl.body.statements.reduce((prev, stmt) => {
-    return {
-      ...prev,
-      ...collectRequiredForStmt(stmt, scopeStacks)
-    };
-  }, {});
+  scopeStacks.push(functionScope);
+  required = {
+    ...required,
+    ...decl.body.statements.reduce((prev, stmt) => {
+      return {
+        ...prev,
+        ...collectRequiredForStmt(stmt, scopeStacks)
+      };
+    }, {})
+  };
   const checked = checkCurrentScope(functionScope, required);
   // leave function scope
   scopeStacks.pop();
@@ -506,8 +537,42 @@ function collectRequiredForTypeParameterDecl(decl, scopeStacks) {
   return required;
 }
 
+function collectRequiredForPropertyDecl(decl, scopeStacks) {
+  if (!decl.initializer) {
+    return {};
+  }
+  return collectRequiredForIdentifierOrExpr(decl.initializer);
+}
+
+function collectRequiredForMethodDecl(decl, scopeStacks) {
+  const methodScope = {};
+  let required = {};
+  decl.parameters.forEach(param => {
+    required = {
+      ...required,
+      ...collectRequiredForIdentifierOrExpr(param.initializer)
+    };
+    methodScope[param.name.escapedText] = VARIABLE_TYPE;
+  });
+  scopeStacks.push(methodScope);
+  required = {
+    ...required,
+    ...decl.body.statements.reduce((prev, stmt) => {
+      return {
+        ...prev,
+        ...collectRequiredForStmt(stmt, scopeStacks)
+      };
+    }, {})
+  };
+  const checked = checkCurrentScope(methodScope, required);
+  // leave function scope
+  scopeStacks.pop();
+  return checked;
+}
+
 function collectRequiredForClassDecl(decl, scopeStacks) {
   let required = {};
+  const classScope = { this: VARIABLE_TYPE };
   if (decl.typeParameters && decl.typeParameters.length) {
     required = decl.typeParameters.reduce((prev, param) => {
       return {
@@ -516,7 +581,17 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
       };
     }, {});
   }
-  return required;
+  scopeStacks.push(classScope);
+  required = {
+    ...required,
+    ...decl.members.reduce((prev, member) => {
+      return {
+        ...prev,
+        ...collectRequiredForDecl(member, scopeStacks)
+      };
+    }, {})
+  };
+  return checkCurrentScope(classScope, required);
 }
 
 function checkCurrentScope(scope, required) {
@@ -526,11 +601,52 @@ function checkCurrentScope(scope, required) {
     if (!((requiredType & scopeType) ^ requiredType)) {
       return prev;
     }
+    if (requiredType & THIS_TYPE && scope.this) {
+      const type = (requiredType ^ THIS_TYPE) & requiredType;
+      return type
+        ? {
+            ...prev,
+            [variable]: type
+          }
+        : {
+            ...prev
+          };
+    }
     return {
       ...prev,
       [variable]: (requiredType ^ scopeType) & requiredType
     };
   }, {});
+}
+
+function collectRequiredForDecl(decl, scopeStacks) {
+  scopeStacks[scopeStacks.length - 1][decl.name.escapedText] = true;
+  let required = {};
+  if (ts.isFunctionDeclaration(decl)) {
+    required = {
+      ...required,
+      ...collectRequiredForFunctionDecl(decl, scopeStacks)
+    };
+  }
+  if (ts.isClassDeclaration(decl)) {
+    required = {
+      ...required,
+      ...collectRequiredForClassDecl(decl, scopeStacks)
+    };
+  }
+  if (ts.isMethodDeclaration(decl)) {
+    required = {
+      ...required,
+      ...collectRequiredForMethodDecl(decl, scopeStacks)
+    };
+  }
+  if (ts.isPropertyDeclaration(decl)) {
+    required = {
+      ...required,
+      ...collectRequiredForPropertyDecl(decl, scopeStacks)
+    };
+  }
+  return required;
 }
 
 function parseSourceFile(sourceFile, context) {
@@ -540,18 +656,10 @@ function parseSourceFile(sourceFile, context) {
     sourceFile,
     child => {
       if (ts.isFunctionDeclaration(child)) {
-        globalScope[child.name.escapedText] = true;
-        required = {
-          ...required,
-          ...collectRequiredForFunctionDecl(child, [globalScope])
-        };
+        required = collectRequiredForDecl(child, [globalScope]);
       }
       if (ts.isClassDeclaration(child)) {
-        globalScope[child.name.escapedText] = true;
-        required = {
-          ...required,
-          ...collectRequiredForClassDecl(child, [globalScope])
-        };
+        required = collectRequiredForDecl(child, [globalScope]);
       }
     },
     context
