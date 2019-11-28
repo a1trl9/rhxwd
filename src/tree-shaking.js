@@ -33,7 +33,9 @@ const srcFiles = [
   // declaration
   buildFilePath('../test_file/test_function_decl.ts'),
   buildFilePath('../test_file/test_class_decl.ts'),
-  buildFilePath('../test_file/test_interface_decl.ts')
+  buildFilePath('../test_file/test_interface_decl.ts'),
+  buildFilePath('../test_file/test_enum_decl.ts'),
+  buildFilePath('../test_file/test_type_alias_decl.ts')
 ];
 const outDir = path.resolve(__dirname, '../dist');
 
@@ -543,6 +545,15 @@ function collectRequiredForMethodDecl(decl, scopeStacks) {
   return checked;
 }
 
+function collectRequiredForEnumDecl(decl, scopeStacks) {
+  return decl.members.reduce((prev, member) => {
+    return {
+      ...prev,
+      ...collectRequiredForIdentifierOrExpr(member.initializer)
+    };
+  }, {});
+}
+
 function collectRequiredForInterfaceDecl(decl, scopeStacks) {
   let required = {};
   if (decl.typeParameters && decl.typeParameters.length) {
@@ -581,7 +592,6 @@ function collectRequiredForInterfaceDecl(decl, scopeStacks) {
       return { ...prev };
     }, {})
   };
-  console.log(required);
   return required;
 }
 
@@ -623,6 +633,33 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
     }, {})
   };
   return checkCurrentScope(classScope, required);
+}
+
+function collectRequiredForTypeAliasDecl(decl, scopeStacks) {
+  let required = {};
+  if (decl.typeParameters && decl.typeParameters.length) {
+    required = decl.typeParameters.reduce((prev, param) => {
+      return {
+        ...prev,
+        ...collectRequiredForTypeParameterDecl(param, scopeStacks)
+      };
+    }, {});
+  }
+  if (decl.type.types) {
+    required = decl.type.types.reduce((prev, type) => {
+      return {
+        ...prev,
+        ...collectRequiredForIdentifierOrExpr(type.typeName, TYPE_TYPE)
+      };
+    }, {});
+  }
+  if (ts.isTypeReferenceNode(decl.type)) {
+    required = {
+      ...required,
+      ...collectRequiredForIdentifierOrExpr(decl.type.typeName, TYPE_TYPE)
+    };
+  }
+  return required;
 }
 
 function checkCurrentScope(scope, required) {
@@ -687,6 +724,20 @@ function collectRequiredForDecl(decl, scopeStacks) {
       ...collectRequiredForInterfaceDecl(decl, scopeStacks)
     };
   }
+  if (ts.isEnumDeclaration(decl)) {
+    scopeStacks[scopeStacks.length - 1][decl.name.escapedText] = VARIABLE_TYPE;
+    required = {
+      ...required,
+      ...collectRequiredForEnumDecl(decl, scopeStacks)
+    };
+  }
+  if (ts.isTypeAliasDeclaration(decl)) {
+    scopeStacks[scopeStacks.length - 1][decl.name.escapedText] = TYPE_TYPE;
+    required = {
+      ...required,
+      ...collectRequiredForTypeAliasDecl(decl, scopeStacks)
+    };
+  }
   return required;
 }
 
@@ -705,6 +756,12 @@ function parseSourceFile(sourceFile, context) {
       if (ts.isInterfaceDeclaration(child)) {
         required = collectRequiredForDecl(child, [globalScope]);
       }
+      if (ts.isEnumDeclaration(child)) {
+        required = collectRequiredForDecl(child, [globalScope]);
+      }
+      if (ts.isTypeAliasDeclaration(child)) {
+        required = collectRequiredForDecl(child, [globalScope]);
+      }
     },
     context
   );
@@ -713,6 +770,7 @@ function parseSourceFile(sourceFile, context) {
   console.log('checked');
   console.log('\n');
   console.log(checkCurrentScope(globalScope, required));
+  console.log('\n');
 }
 
 function shakingTransformer() {
