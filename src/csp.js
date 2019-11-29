@@ -1,12 +1,12 @@
-const ts = require("typescript");
-const fs = require("fs");
-const path = require("path");
-const readResource = require("./utils").readResource;
+const ts = require('typescript');
+const fs = require('fs');
+const path = require('path');
+const readResource = require('./utils').readResource;
 
-const testDir = "/Users/a1trl9/personal/tscp/test_file/test-component.ts";
+const testDir = '/Users/a1trl9/personal/tscp/test_file/test-component.ts';
 // "/Users/a1trl9/workspace/fingerprint-frontend/frontend-v3/src/app/pages/shell/shell.component.ts";
 
-const baseDir = "/Users/a1trl9/personal/tscp/test_file";
+const baseDir = '/Users/a1trl9/personal/tscp/test_file';
 // "/Users/a1trl9/workspace/fingerprint-frontend/frontend-v3";
 
 const fileNames = readResource(testDir);
@@ -17,10 +17,7 @@ fileNames.forEach(filename => {
   collectDeps(sourceFile, filename, pkgMap, []);
 });
 
-fs.writeFileSync(
-  path.resolve(__dirname, "../test_file/output.json"),
-  JSON.stringify(pkgMap)
-);
+fs.writeFileSync(path.resolve(__dirname, '../test_file/output.json'), JSON.stringify(pkgMap));
 
 function collectDeps(sourceFile, filename, pkgMap, chains) {
   pkgMap[filename] = {
@@ -53,25 +50,15 @@ function collectDeps(sourceFile, filename, pkgMap, chains) {
           return;
         }
         if (!pkgMap[path]) {
-          collectDeps(createSourceFile(path), path, pkgMap, [
-            ...chains,
-            filename
-          ]);
+          collectDeps(createSourceFile(path), path, pkgMap, [...chains, filename]);
         } else if (!pkgMap[path].sourceFile) {
-          console.warn(
-            `cycle deps: ${[...chains, filename, chains[0]].join(" -> ")}`
-          );
+          console.warn(`cycle deps: ${[...chains, filename, chains[0]].join(' -> ')}`);
           process.exit();
         }
         pkgMap[filename].imports.push(pkgMap[path]);
       }
       if (ts.isImportDeclaration(node)) {
-        addImportToVariabls(
-          node,
-          pkgMap[filename],
-          pkgMap[path],
-          unresolvedExport
-        );
+        addImportToVariabls(node, pkgMap[filename], pkgMap[path], unresolvedExport);
       }
       if (isReexport(node)) {
         reexport(pkgMap[filename], pkgMap[path]);
@@ -134,15 +121,10 @@ function addImportForImportAll(node, target, importTarget, unresolvedExport) {
   handUnresolvedExport(name, target, unresolvedExport);
 }
 
-function addImportForImportDefault(
-  node,
-  target,
-  importTarget,
-  unresolvedExport
-) {
+function addImportForImportDefault(node, target, importTarget, unresolvedExport) {
   const name = node.name.escapedText;
   if (!importTarget.exports.default) {
-    console.log("default is not defined");
+    console.log('default is not defined');
   }
   target.variables[name] = importTarget.exports.default;
   handUnresolvedExport(name, target, unresolvedExport);
@@ -152,7 +134,7 @@ function addImportToVariabls(node, target, importTarget, unresolvedExport) {
   const importClause = node.importClause;
 
   if (!importClause) {
-    console.log("We do not wanna support side-effect import!!");
+    console.log('We do not wanna support side-effect import!!');
     console.log(node);
     process.exit();
   }
@@ -160,12 +142,7 @@ function addImportToVariabls(node, target, importTarget, unresolvedExport) {
   // import default
   // @example: import something from './other.module';
   if (importClause.name) {
-    addImportForImportDefault(
-      importClause,
-      target,
-      importTarget,
-      unresolvedExport
-    );
+    addImportForImportDefault(importClause, target, importTarget, unresolvedExport);
   }
 
   const namedBindings = importClause.namedBindings;
@@ -176,12 +153,7 @@ function addImportToVariabls(node, target, importTarget, unresolvedExport) {
   // import all
   // @example: import * as something from './other.module';
   if (!namedBindings.elements) {
-    addImportForImportAll(
-      namedBindings,
-      target,
-      importTarget,
-      unresolvedExport
-    );
+    addImportForImportAll(namedBindings, target, importTarget, unresolvedExport);
     return;
   }
 
@@ -200,7 +172,7 @@ function addImportToVariabls(node, target, importTarget, unresolvedExport) {
       localName = importName;
     }
     if (!importTarget.exports[importName]) {
-      console.log("Error! not found", importName);
+      console.log('Error! not found', importName);
     } else {
       target.variables[localName] = importTarget.exports[importName];
       handUnresolvedExport(localName, target, unresolvedExport);
@@ -269,29 +241,29 @@ function parseLocalnameForAccessExp(accessExps) {
     const exp = accessExps[index];
     if (!exp.type) {
       localName.push(exp.text);
-    } else if (exp.type === "dotAccess") {
+    } else if (exp.type === 'dotAccess') {
       localName.push(`.${exp.text}`);
     } else {
       localName.push(`[${exp.text}]`);
     }
   }
-  return localName.join("");
+  return localName.join('');
 }
 
 function parseDefaultExportAssignment(node, target, unresolvedExport) {
   if (target.exports.default) {
-    console.log("multiple default export!!");
+    console.log('multiple default export!!');
     process.exit();
   }
   let expression = node.expression;
   let accessExps = [];
   while (expression && !expression.escapedText) {
     if (expression.name && expression.name.escapedText) {
-      accessExps.push({ type: "dotAccess", text: expression.name.escapedText });
+      accessExps.push({ type: 'dotAccess', text: expression.name.escapedText });
     }
     if (expression.argumentExpression) {
       accessExps.push({
-        type: "arg",
+        type: 'arg',
         text: expression.argumentExpression.text
       });
     }
@@ -303,9 +275,7 @@ function parseDefaultExportAssignment(node, target, unresolvedExport) {
   target.exports.default = {
     node
   };
-  const name = accessExps.length
-    ? accessExps[accessExps.length - 1]
-    : "default";
+  const name = accessExps.length ? accessExps[accessExps.length - 1] : 'default';
   const accessToken = parseLocalnameForAccessExp(accessExps);
   target.exports.default = {
     localName: name,
@@ -315,7 +285,7 @@ function parseDefaultExportAssignment(node, target, unresolvedExport) {
     // dotAccessVisit(target.variables[name], dotAccess);
     target.exports.default.mapVariable = target.variables[name];
   } else {
-    unresolvedExport[name] = "default";
+    unresolvedExport[name] = 'default';
   }
 }
 
@@ -354,7 +324,7 @@ function parseExportStatement(node, target) {
   if (node.name) {
     let nodeName;
     if (isDefaultExportStatement(node)) {
-      nodeName = "default";
+      nodeName = 'default';
     } else {
       nodeName = node.name.escapedText;
     }
@@ -393,11 +363,7 @@ function isExportStatement(node) {
 }
 
 function createSourceFile(filename) {
-  return ts.createSourceFile(
-    filename,
-    fs.readFileSync(filename).toString(),
-    ts.ScriptTarget.ES5
-  );
+  return ts.createSourceFile(filename, fs.readFileSync(filename).toString(), ts.ScriptTarget.ES5);
 }
 
 function normalizeImportPath(p, basePath, filePath) {
@@ -406,15 +372,15 @@ function normalizeImportPath(p, basePath, filePath) {
     const fileDir = getFileDir(filePath);
     normalized = path.resolve(fileDir, p);
   }
-  return normalized + ".ts";
+  return normalized + '.ts';
 }
 
 function getFileDir(path) {
-  const segs = path.split("/");
+  const segs = path.split('/');
   segs.pop();
-  return segs.join("/");
+  return segs.join('/');
 }
 
 function isRelativePath(path) {
-  return path.startsWith(".") || path.startsWith("..");
+  return path.startsWith('.') || path.startsWith('..');
 }

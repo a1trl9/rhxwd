@@ -2,7 +2,7 @@ const path = require('path');
 const ts = require('typescript');
 
 const BLOCK_FLAG = Symbol('block');
-const FUNC_DECL_FLAG = Symbol('func_decl');
+const GLOBAL_REQUIRED_KEY = Symbol('global_required_key');
 
 const EMPTY_TYPE = 0;
 const VARIABLE_TYPE = 1 << 0;
@@ -14,28 +14,33 @@ const FUNC_TYPE = 1 << 5;
 const CLASS_TYPE = 1 << 6;
 const INTERFACE_TYPE = 1 << 7;
 
+// TODO: a bunch of todo
+// code refine.. data structure, iteration... now its too silly
+// test
+// decorator & declaration
+
 function buildFilePath(file) {
   return path.resolve(__dirname, file);
 }
 
 const srcFiles = [
   // statement
-  buildFilePath('../test_file/test_do_statement.ts'),
-  buildFilePath('../test_file/test_if_statement.ts'),
-  buildFilePath('../test_file/test_while_statement.ts'),
-  buildFilePath('../test_file/test_label_statement.ts'),
-  buildFilePath('../test_file/test_for_statement.ts'),
-  buildFilePath('../test_file/test_forof_statement.ts'),
-  buildFilePath('../test_file/test_forin_statement.ts'),
-  buildFilePath('../test_file/test_switch_statement.ts'),
-  buildFilePath('../test_file/test_try_catch_statement.ts'),
-  buildFilePath('../test_file/test_throw_statement.ts'),
+  // buildFilePath('../test_file/test_do_statement.ts'),
+  // buildFilePath('../test_file/test_if_statement.ts'),
+  // buildFilePath('../test_file/test_while_statement.ts'),
+  // buildFilePath('../test_file/test_label_statement.ts'),
+  // buildFilePath('../test_file/test_for_statement.ts'),
+  // buildFilePath('../test_file/test_forof_statement.ts'),
+  // buildFilePath('../test_file/test_forin_statement.ts'),
+  // buildFilePath('../test_file/test_switch_statement.ts'),
+  // buildFilePath('../test_file/test_try_catch_statement.ts'),
+  // buildFilePath('../test_file/test_throw_statement.ts'),
   // declaration
-  buildFilePath('../test_file/test_function_decl.ts'),
-  buildFilePath('../test_file/test_class_decl.ts'),
-  buildFilePath('../test_file/test_interface_decl.ts'),
-  buildFilePath('../test_file/test_enum_decl.ts'),
-  buildFilePath('../test_file/test_type_alias_decl.ts')
+  buildFilePath('../test_file/test-function-decl.ts')
+  // buildFilePath('../test_file/test_class_decl.ts'),
+  // buildFilePath('../test_file/test_interface_decl.ts'),
+  // buildFilePath('../test_file/test_enum_decl.ts'),
+  // buildFilePath('../test_file/test_type_alias_decl.ts')
 ];
 const outDir = path.resolve(__dirname, '../dist');
 
@@ -47,7 +52,7 @@ const compileOptions = {
   experimentalDecorators: true,
   allowJs: true,
   moduleResolution: ts.ModuleResolutionKind.node,
-  target: ts.ScriptTarget.ES5,
+  target: ts.ScriptTarget.ES2015,
   removeComments: true,
   lib: ['es2017', 'es2016', 'es2015', 'dom']
 };
@@ -74,7 +79,7 @@ function parseExpression(expr, type = VARIABLE_TYPE) {
   }
   if (ts.isPropertyAccessExpression(expr)) {
     const chainType = expr.expression.kind === ts.SyntaxKind.ThisKeyword ? THIS_TYPE : PROPERTY_TYPE;
-    return [...parseIdentifierOrLiteralOrExpression(expr.expression, type), { key: [expr.name.escapedText], newType: chainType }];
+    return [...parseIdentifierOrLiteralOrExpression(expr.expression, type), { key: [expr.name.escapedText], type: chainType }];
   }
   if (ts.isElementAccessExpression(expr)) {
     return [
@@ -212,7 +217,7 @@ function parseIdentifierOrLiteralOrExpression(node, type = VARIABLE_TYPE) {
     return [];
   }
   if (ts.isIdentifier(node)) {
-    return [{ key: [node.escapedText], type }];
+    return [{ key: node.escapedText, type }];
   }
   return parseExpression(node, type);
 }
@@ -433,16 +438,20 @@ function collectRequiredForStmt(stmt, scopeStacks) {
  * @example: const a = 3;
  */
 function collectRequiredForVariableDecl(decl, scopeStacks, blockScoped) {
-  const localStack = scopeStacks[scopeStacks.length - 1];
-  const required = checkCurrentScope(localStack, collectRequiredForIdentifierOrExpr(decl.initializer));
+  let index = scopeStacks.length - 1;
+  const localStack = scopeStacks[index];
+  // skip global scope
+  const required = checkCurrentScope(index === 0 ? {} : localStack, collectRequiredForIdentifierOrExpr(decl.initializer));
   if (blockScoped) {
     localStack[decl.name.escapedText] = VARIABLE_TYPE;
   } else {
-    let index = scopeStacks.length - 1;
     while (index >= 0 && scopeStacks[index][BLOCK_FLAG]) {
       index -= 1;
     }
     scopeStacks[index][decl.name.escapedText] = VARIABLE_TYPE;
+  }
+  if (index === 0) {
+    scopeStacks[0][GLOBAL_REQUIRED_KEY][decl.name.escapedText] = required;
   }
   return required;
 }
@@ -483,7 +492,9 @@ function collectRequiredForFunctionDecl(decl, scopeStacks) {
     ...decl.body.statements.reduce((prev, stmt) => {
       return {
         ...prev,
-        ...collectRequiredForStmt(stmt, scopeStacks)
+        ...(isStatementKindButNotDeclarationKind(stmt)
+          ? collectRequiredForStmt(stmt, scopeStacks)
+          : collectRequiredForDecl(stmt, scopeStacks))
       };
     }, {})
   };
@@ -632,7 +643,9 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
       };
     }, {})
   };
-  return checkCurrentScope(classScope, required);
+  required = checkCurrentScope(classScope, required);
+  scopeStacks.pop();
+  return required;
 }
 
 function collectRequiredForTypeAliasDecl(decl, scopeStacks) {
@@ -663,7 +676,7 @@ function collectRequiredForTypeAliasDecl(decl, scopeStacks) {
 }
 
 function checkCurrentScope(scope, required) {
-  return Object.keys(required).reduce((prev, variable) => {
+  const res = Object.keys(required).reduce((prev, variable) => {
     const requiredType = required[variable];
     const scopeType = scope[variable];
     if (!((requiredType & scopeType) ^ requiredType)) {
@@ -685,6 +698,7 @@ function checkCurrentScope(scope, required) {
       [variable]: (requiredType ^ scopeType) & requiredType
     };
   }, {});
+  return res;
 }
 
 function collectRequiredForDecl(decl, scopeStacks) {
@@ -738,49 +752,189 @@ function collectRequiredForDecl(decl, scopeStacks) {
       ...collectRequiredForTypeAliasDecl(decl, scopeStacks)
     };
   }
+  if (scopeStacks.length === 1) {
+    scopeStacks[0][GLOBAL_REQUIRED_KEY][decl.name.escapedText] = required;
+  }
   return required;
 }
 
+// TODO:
+// 1. import
+// 2. export
+// 3. [ASP] module
+// [ASP] namespace
+
+function isDeclarationStatementKind(node) {
+  const kind = node.kind;
+  return (
+    kind === ts.SyntaxKind.FunctionDeclaration ||
+    kind === ts.SyntaxKind.MissingDeclaration ||
+    kind === ts.SyntaxKind.ClassDeclaration ||
+    kind === ts.SyntaxKind.InterfaceDeclaration ||
+    kind === ts.SyntaxKind.TypeAliasDeclaration ||
+    kind === ts.SyntaxKind.EnumDeclaration ||
+    kind === ts.SyntaxKind.ModuleDeclaration ||
+    kind === ts.SyntaxKind.ImportDeclaration ||
+    kind === ts.SyntaxKind.ImportEqualsDeclaration ||
+    kind === ts.SyntaxKind.ExportDeclaration ||
+    kind === ts.SyntaxKind.ExportAssignment ||
+    kind === ts.SyntaxKind.NamespaceExportDeclaration
+  );
+}
+
+// TODO: what is notemitted, endofdecl, mergedecl?
+function isStatementKindButNotDeclarationKind(node) {
+  const kind = node.kind;
+  return (
+    kind === ts.SyntaxKind.BreakStatement ||
+    kind === ts.SyntaxKind.ContinueStatement ||
+    kind === ts.SyntaxKind.DebuggerStatement ||
+    kind === ts.SyntaxKind.DoStatement ||
+    kind === ts.SyntaxKind.ExpressionStatement ||
+    kind === ts.SyntaxKind.EmptyStatement ||
+    kind === ts.SyntaxKind.ForInStatement ||
+    kind === ts.SyntaxKind.ForOfStatement ||
+    kind === ts.SyntaxKind.ForStatement ||
+    kind === ts.SyntaxKind.IfStatement ||
+    kind === ts.SyntaxKind.LabeledStatement ||
+    kind === ts.SyntaxKind.ReturnStatement ||
+    kind === ts.SyntaxKind.SwitchStatement ||
+    kind === ts.SyntaxKind.ThrowStatement ||
+    kind === ts.SyntaxKind.TryStatement ||
+    kind === ts.SyntaxKind.VariableStatement ||
+    kind === ts.SyntaxKind.WhileStatement ||
+    kind === ts.SyntaxKind.WithStatement ||
+    kind === ts.SyntaxKind.NotEmittedStatement ||
+    kind === ts.SyntaxKind.EndOfDeclarationMarker ||
+    kind === ts.SyntaxKind.MergeDeclarationMarker
+  );
+}
+
+function isReexport(node) {
+  if (!ts.isExportDeclaration(node) || !node.moduleSpecifier) return false;
+  return true;
+}
+
+function isLocalExportDecl(node) {
+  return !isReexport(node) && ts.isExportDeclaration(node);
+}
+
+function isExportStatement(node) {
+  if (!node.modifiers || !node.modifiers.length) return false;
+  for (let modifier of node.modifiers) {
+    if (modifier.kind === ts.SyntaxKind.ExportKeyword) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectRequiredFromAST(node, scopeStacks) {
+  if (isDeclarationStatementKind(node)) {
+    collectRequiredForDecl(node, scopeStacks);
+  } else if (isStatementKindButNotDeclarationKind(node)) {
+    collectRequiredForStmt(node, scopeStacks);
+  }
+}
+
+function collectRequiredRecursively(nodeName, requiredMap) {
+  if (!requiredMap[nodeName]) {
+    return {};
+  }
+  return {
+    ...requiredMap[nodeName],
+    ...Object.keys(requiredMap[nodeName]).reduce((prev, key) => {
+      return {
+        ...prev,
+        ...collectRequiredRecursively(key, requiredMap)
+      };
+    }, {})
+  };
+}
+
+function collectRequiredStartFromExports(node, requiredMap) {
+  if (node.name) {
+    return collectRequiredRecursively(node.name.escapedText, requiredMap);
+  } else {
+    return node.declarationList.declarations.reduce((prev, decl) => {
+      return {
+        ...prev,
+        ...collectRequiredRecursively(decl.name.escapedText, requiredMap)
+      };
+    }, {});
+  }
+}
+
+function filterDeclList(decls, requiredMap) {
+  return decls.find(decl => requiredMap[decl.name.escapedText]);
+}
+
+function filterNode(node, requiredMap) {
+  if (requiredMap[node.name.escapedText]) {
+    return node;
+  }
+  return null;
+}
+
+function checkIfRemainDeclStat(node, requiredMap) {
+  return node.declarationList.declarations.find(decl => requiredMap[decl.name.escapedText]);
+}
+
 function parseSourceFile(sourceFile, context) {
-  const globalScope = {};
+  const globalScope = { [GLOBAL_REQUIRED_KEY]: {} };
+  ts.visitEachChild(
+    sourceFile,
+    child => {
+      collectRequiredFromAST(child, [globalScope]);
+    },
+    context
+  );
+  console.log(globalScope[GLOBAL_REQUIRED_KEY]);
   let required = {};
   ts.visitEachChild(
     sourceFile,
     child => {
-      if (ts.isFunctionDeclaration(child)) {
-        required = collectRequiredForDecl(child, [globalScope]);
-      }
-      if (ts.isClassDeclaration(child)) {
-        required = collectRequiredForDecl(child, [globalScope]);
-      }
-      if (ts.isInterfaceDeclaration(child)) {
-        required = collectRequiredForDecl(child, [globalScope]);
-      }
-      if (ts.isEnumDeclaration(child)) {
-        required = collectRequiredForDecl(child, [globalScope]);
-      }
-      if (ts.isTypeAliasDeclaration(child)) {
-        required = collectRequiredForDecl(child, [globalScope]);
+      if (isLocalExportDecl(child) || ts.isExportDeclaration(child) || isExportStatement(child)) {
+        required = {
+          ...required,
+          ...collectRequiredStartFromExports(child, globalScope[GLOBAL_REQUIRED_KEY])
+        };
+        if (child.name) {
+          required[child.name.escapedText] = VARIABLE_TYPE;
+        } else if (ts.isVariableStatement(child)) {
+          child.declarationList.declarations.forEach(decl => {
+            required[decl.name.escapedText] = VARIABLE_TYPE;
+          });
+        }
       }
     },
     context
   );
-  console.log(required);
-  console.log('\n');
-  console.log('checked');
-  console.log('\n');
-  console.log(checkCurrentScope(globalScope, required));
-  console.log('\n');
+  return required;
+  // console.log(required);
+  // console.log(required);
+  // console.log('\n');
+  // console.log('checked');
+  // console.log('\n');
+  // console.log(checkCurrentScope(globalScope, required));
+  // console.log('\n');
 }
 
 function shakingTransformer() {
   return context => {
-    const visit = node => {
+    const visit = (node, required) => {
+      let r;
       if (ts.isSourceFile(node)) {
-        parseSourceFile(node, context);
-        return node;
+        r = parseSourceFile(node, context);
       }
-      return ts.visitEachChild(node, child => visit(child), context);
+      if ((required && isDeclarationStatementKind(node)) || ts.isVariableDeclaration(node)) {
+        return filterNode(node, required);
+      }
+      if (required && ts.isVariableStatement(node)) {
+        remain = checkIfRemainDeclStat(node, required);
+        if (!remain) return null;
+      }
+      return ts.visitEachChild(node, child => visit(child, r || required), context);
     };
 
     return node => ts.visitNode(node, visit);

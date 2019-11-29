@@ -11,3 +11,4 @@ dist
 **/browserslist
 src/libs/**
 src/assets/scripts/**
+**/test_file/**
