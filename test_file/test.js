@@ -1,9 +1,5 @@
-"use strict";
-let b = 2;
-try {
-  var a = 2;
-} catch (e) {
-  let b = 4;
-  console.log("catch");
+a = 3;
+function test() {
+  console.log(this.a)
 }
-console.log(a, b);
+test()

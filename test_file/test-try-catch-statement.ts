@@ -1,19 +1,26 @@
-const global_var_1 = 3;
-const global_var_2 = 3;
-const global_var_3 = 3;
-const global_var_4 = 3;
-export function testTryCatchStatement() {
-  const local_var_1 = 2;
-  const local_var_2 = 2;
-  const local_var_3 = 4;
+const global_var_for_try_1 = 3;
+const global_var_for_catch_1 = '';
+const global_var_for_final_1 = 4;
+
+function func_in_try_block(param: number) {
+  return param + 1;
+}
+
+function func_in_catch_block(param: string) {
+  return param + '';
+}
+
+function func_in_finally_block(param: number) {
+  return param * 2;
+}
+
+export function export_func() {
   try {
-    const a = local_var_1 + global_var_1;
-    const local_var_3 = 4;
-  } catch (e) {
-    const b = global_var_2 + local_var_2 + global_var_3 + e;
-    var b_var = 4;
+    func_in_try_block(global_var_for_try_1);
+  } catch(e) {
+    func_in_catch_block(global_var_for_catch_1);
   } finally {
-    const c = global_var_4 + local_var_3;
+    const local_var_in_final = 3;
+    func_in_finally_block(local_var_in_final);
   }
-  const d = b_var;
 }

@@ -18,6 +18,7 @@ const INTERFACE_TYPE = 1 << 7;
 // code refine.. data structure, iteration... now its too silly
 // test
 // decorator & declaration
+// compile option
 
 function buildFilePath(file) {
   return path.resolve(__dirname, file);
@@ -26,21 +27,21 @@ function buildFilePath(file) {
 const srcFiles = [
   // statement
   // buildFilePath('../test_file/test_do_statement.ts'),
-  // buildFilePath('../test_file/test_if_statement.ts'),
-  // buildFilePath('../test_file/test_while_statement.ts'),
+  buildFilePath('../test_file/test-if-statement.ts')
+  // buildFilePath('../test_file/test-while-statement.ts')
   // buildFilePath('../test_file/test_label_statement.ts'),
   // buildFilePath('../test_file/test_for_statement.ts'),
   // buildFilePath('../test_file/test_forof_statement.ts'),
   // buildFilePath('../test_file/test_forin_statement.ts'),
   // buildFilePath('../test_file/test_switch_statement.ts'),
-  // buildFilePath('../test_file/test_try_catch_statement.ts'),
+  // buildFilePath('../test_file/test-try-catch-statement.ts')
   // buildFilePath('../test_file/test_throw_statement.ts'),
   // declaration
-  buildFilePath('../test_file/test-function-decl.ts')
-  // buildFilePath('../test_file/test_class_decl.ts'),
+  // buildFilePath('../test_file/test-function-decl.ts')
+  // buildFilePath('../test_file/test-class-decl.ts')
   // buildFilePath('../test_file/test_interface_decl.ts'),
   // buildFilePath('../test_file/test_enum_decl.ts'),
-  // buildFilePath('../test_file/test_type_alias_decl.ts')
+  // buildFilePath('../test_file/test-type-alias-decl.ts')
 ];
 const outDir = path.resolve(__dirname, '../dist');
 
@@ -508,18 +509,19 @@ function collectRequiredForTypeParameterDecl(decl, scopeStacks) {
   let required = {};
   const localScope = scopeStacks[scopeStacks.length - 1];
   localScope[decl.name.escapedText] = TYPE_TYPE;
-  if (decl.constraint) {
-    required = {
-      ...required,
-      ...collectRequiredForIdentifierOrExpr(decl.constraint.typeName)
-    };
-  }
-  if (decl.default) {
-    required = {
-      ...required,
-      ...collectRequiredForIdentifierOrExpr(decl.default.typeName)
-    };
-  }
+  // TODO: make sure these two could be removed
+  // if (decl.constraint) {
+  //   required = {
+  //     ...required,
+  //     ...collectRequiredForIdentifierOrExpr(decl.constraint.typeName)
+  //   };
+  // }
+  // if (decl.default) {
+  //   required = {
+  //     ...required,
+  //     ...collectRequiredForIdentifierOrExpr(decl.default.typeName)
+  //   };
+  // }
   return required;
 }
 
@@ -608,6 +610,8 @@ function collectRequiredForInterfaceDecl(decl, scopeStacks) {
 
 function collectRequiredForClassDecl(decl, scopeStacks) {
   let required = {};
+  const classScope = { this: VARIABLE_TYPE };
+  scopeStacks.push(classScope);
   if (decl.typeParameters && decl.typeParameters.length) {
     required = decl.typeParameters.reduce((prev, param) => {
       return {
@@ -616,7 +620,6 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
       };
     }, {});
   }
-  const classScope = { this: VARIABLE_TYPE };
   if (decl.heritageClauses) {
     required = {
       ...required,
@@ -633,7 +636,6 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
       }, {})
     };
   }
-  scopeStacks.push(classScope);
   required = {
     ...required,
     ...decl.members.reduce((prev, member) => {
@@ -649,30 +651,33 @@ function collectRequiredForClassDecl(decl, scopeStacks) {
 }
 
 function collectRequiredForTypeAliasDecl(decl, scopeStacks) {
-  let required = {};
-  if (decl.typeParameters && decl.typeParameters.length) {
-    required = decl.typeParameters.reduce((prev, param) => {
-      return {
-        ...prev,
-        ...collectRequiredForTypeParameterDecl(param, scopeStacks)
-      };
-    }, {});
-  }
-  if (decl.type.types) {
-    required = decl.type.types.reduce((prev, type) => {
-      return {
-        ...prev,
-        ...collectRequiredForIdentifierOrExpr(type.typeName, TYPE_TYPE)
-      };
-    }, {});
-  }
-  if (ts.isTypeReferenceNode(decl.type)) {
-    required = {
-      ...required,
-      ...collectRequiredForIdentifierOrExpr(decl.type.typeName, TYPE_TYPE)
-    };
-  }
-  return required;
+  // We actually dont need parse any TypeAliasDeclaration since it will be omitted by compiler
+  return {};
+
+  // let required = {};
+  // if (decl.typeParameters && decl.typeParameters.length) {
+  //   required = decl.typeParameters.reduce((prev, param) => {
+  //     return {
+  //       ...prev,
+  //       ...collectRequiredForTypeParameterDecl(param, scopeStacks)
+  //     };
+  //   }, {});
+  // }
+  // if (decl.type.types) {
+  //   required = decl.type.types.reduce((prev, type) => {
+  //     return {
+  //       ...prev,
+  //       ...collectRequiredForIdentifierOrExpr(type.typeName, TYPE_TYPE)
+  //     };
+  //   }, {});
+  // }
+  // if (ts.isTypeReferenceNode(decl.type)) {
+  //   required = {
+  //     ...required,
+  //     ...collectRequiredForIdentifierOrExpr(decl.type.typeName, TYPE_TYPE)
+  //   };
+  // }
+  // return required;
 }
 
 function checkCurrentScope(scope, required) {
@@ -870,14 +875,16 @@ function filterDeclList(decls, requiredMap) {
 }
 
 function filterNode(node, requiredMap) {
-  if (requiredMap[node.name.escapedText]) {
+  if (requiredMap[node.name.escapedText] <= VARIABLE_TYPE) {
     return node;
   }
   return null;
 }
 
 function checkIfRemainDeclStat(node, requiredMap) {
-  return node.declarationList.declarations.find(decl => requiredMap[decl.name.escapedText]);
+  return node.declarationList.declarations.find(decl => {
+    return requiredMap[decl.name.escapedText] <= VARIABLE_TYPE;
+  });
 }
 
 function parseSourceFile(sourceFile, context) {
@@ -911,13 +918,6 @@ function parseSourceFile(sourceFile, context) {
     context
   );
   return required;
-  // console.log(required);
-  // console.log(required);
-  // console.log('\n');
-  // console.log('checked');
-  // console.log('\n');
-  // console.log(checkCurrentScope(globalScope, required));
-  // console.log('\n');
 }
 
 function shakingTransformer() {
