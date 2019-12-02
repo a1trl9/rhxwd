@@ -27,7 +27,7 @@ function buildFilePath(file) {
 const srcFiles = [
   // statement
   // buildFilePath('../test_file/test_do_statement.ts'),
-  buildFilePath('../test_file/test-if-statement.ts')
+  // buildFilePath('../test_file/test-if-statement.ts')
   // buildFilePath('../test_file/test-while-statement.ts')
   // buildFilePath('../test_file/test_label_statement.ts'),
   // buildFilePath('../test_file/test_for_statement.ts'),
@@ -40,7 +40,7 @@ const srcFiles = [
   // buildFilePath('../test_file/test-function-decl.ts')
   // buildFilePath('../test_file/test-class-decl.ts')
   // buildFilePath('../test_file/test_interface_decl.ts'),
-  // buildFilePath('../test_file/test_enum_decl.ts'),
+  buildFilePath('../test_file/test-enum-decl.ts')
   // buildFilePath('../test_file/test-type-alias-decl.ts')
 ];
 const outDir = path.resolve(__dirname, '../dist');
